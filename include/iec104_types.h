@@ -35,6 +35,20 @@ extern "C" {
 #define M_ME_TD_1	34
 #define M_ME_TE_1	35
 #define M_ME_TF_1	36
+#define	M_IT_TB_1	37
+#define C_IC_NA_1	100
+#define C_CI_NA_1	101
+#define C_CS_NA_1	103
+
+/* cause of transmition (standard) */
+#define	CYCLIC		1
+#define BGSCAN		2
+#define SPONTANEOUS	3
+#define REQUEST		5
+#define ACTIVATION	6
+#define ACTCONFIRM	7
+#define DEACTIVATION	8
+#define ACTTERM		10
 
 /* 32-bit string state and change data unit */
 struct iec_stcd {
@@ -75,7 +89,7 @@ struct iec_stcd {
 }__attribute__((__packed__));
 
 /* CP56Time2a timestamp */
-typedef struct cp56time2a {
+struct cp56time2a {
 	u_short		msec;
 	u_char		min	:6;
 	u_char		res1	:1;
@@ -89,7 +103,9 @@ typedef struct cp56time2a {
 	u_char		res3	:4;
 	u_char		year	:7;
 	u_char		res4	:1;	
-} cp56time2a __attribute__((__packed__));
+} __attribute__((__packed__));
+
+typedef struct cp56time2a cp56time2a;
 
 /* M_SP_NA_1 - single point information with quality description */
 struct iec_type1 {
@@ -204,6 +220,29 @@ struct iec_type36 {
 	cp56time2a	time;
 }__attribute__((__packed__));
 
+/* M_IT_TB_1 */
+struct iec_type37 {
+	int32_t		bcr;
+	u_char		sq	:5;
+	u_char		cy	:1;
+	u_char		ca	:1;
+	u_char		iv	:1;
+	cp56time2a	time;
+}__attribute__((__packed__));
+
+struct iec_type100 {
+	u_char		qoi;	/* pointer of interrogation */
+}__attribute__((__packed__));
+
+struct iec_type101 {
+	u_char		rqt	:6; /* request */
+	u_char		frz	:2; /* freeze  */
+}__attribute__((__packed__));
+
+struct iec_type103 {
+	cp56time2a	time;
+}__attribute__((__packed__));
+
 /* Data unit identifier block - ASDU header */
 struct iec_unit_id {
 	u_char		type;	/* type identification */
@@ -212,6 +251,7 @@ struct iec_unit_id {
 	u_char		cause	:6; /* cause of transmission */
 	u_char		t	:1; /* test */
 	u_char		pn	:1; /* positive/negative app. confirmation */
+	u_char		ma;	/* master address */
 	u_short		ca;	/* common address of ASDU */
 }__attribute__((__packed__));
 

@@ -47,13 +47,15 @@ fprintf(stderr, "%s: " format ": %s\n", MODNAME, ##arg, strerror(errno))
 #define proto_debug(format, arg...)					\
 fprintf(stderr, "%s: " format "\n", MODNAME, ##arg)
 
+void bufferevent_setwatermark(struct bufferevent *bufev, short events, size_t lowmark, size_t highmark);
+
 static void iecsock_uframe_send(struct iecsock *s, enum uframe_func func)
 {
 	struct iechdr h;
 	
 	memset(&h, 0, sizeof(struct iechdr));
 	
-	proto_debug("TX U %s stopdt:%i", uframe_func_to_string(func), s->stopdt);
+/*	proto_debug("TX U %s stopdt:%i", uframe_func_to_string(func), s->stopdt);*/
 	
 	h.start = 0x68;
 	h.length = sizeof(struct iec_u);
@@ -81,7 +83,7 @@ static void iecsock_sframe_send(struct iecsock *s)
 	
 	memset(&h, 0, sizeof(h));
 	
-	proto_debug("TX S N(r)=%i", s->vr);
+/*	proto_debug("TX S N(r)=%i", s->vr); */
 	
 	h.start = 0x68;
 	h.length = sizeof(struct iec_s);
@@ -148,10 +150,10 @@ static void t3_timer_run(int nofd, short what, void *arg)
 
 static inline void flush_queue(struct iec_buf_queue *q)
 {
-	struct iec_buf *b, *tmp;
+	struct iec_buf *b;
 	
-	for (tmp = b = TAILQ_FIRST(q); !TAILQ_EMPTY(q) &&
-		(b = (TAILQ_NEXT(tmp, head))); b = tmp) {	
+	while (!(TAILQ_EMPTY(q))) {
+		b = TAILQ_FIRST(q);
 		TAILQ_REMOVE(q, b, head);
 		free(b);
 	}
@@ -166,22 +168,21 @@ static inline void iecsock_flush_queues(struct iecsock *s)
 void iecsock_run_write_queue(struct iecsock *s)
 {
 	struct iechdr *h;
-	struct iec_buf *b, *tmp;
+	struct iec_buf *b;
 	
 	if (s->type == IEC_SLAVE && s->stopdt)
 		return;
 	
-	for (tmp = b = TAILQ_FIRST(&s->write_q); 
-		!(TAILQ_EMPTY(&s->write_q)) && (b = (TAILQ_NEXT(tmp, head))) && 
-			(s->vs != (s->va + s->k) % 32767); b = tmp) {
-		
+	while ( !(TAILQ_EMPTY(&s->write_q)) && (s->vs != (s->va + s->k) % 32767) ) {
+
+		b = TAILQ_FIRST(&s->write_q);
 		TAILQ_REMOVE(&s->write_q, b, head);
 		h = &b->h;
 		h->ic.nr = s->vr;
 		h->ic.ns = s->vs;
 		
-		proto_debug("TX I V(s)=%d V(a)=%d N(s)=%d N(r)=%d", s->vs, s->va, 
-					h->ic.ns, h->ic.nr);
+/*		proto_debug("TX I V(s)=%d V(a)=%d N(s)=%d N(r)=%d", s->vs, s->va, 
+					h->ic.ns, h->ic.nr);*/
 		if (t1_timer_pending(s))
 			t1_timer_stop(s);
 		t1_timer_start(s);
@@ -193,19 +194,18 @@ void iecsock_run_write_queue(struct iecsock *s)
 		s->xmit_cnt++;
 	}
 	
-	if (s->vs == (s->va + s->k) % 32767)
-		proto_debug("reached k, no frames will be sent");
+/*	if (s->vs == (s->va + s->k) % 32767)
+		proto_debug("reached k, no frames will be sent"); */
 }
 
 static void iecsock_run_ackw_queue(struct iecsock *s, unsigned short nr)
 {
-	struct iec_buf *b, *tmp;
+	struct iec_buf *b;
 	
-	proto_debug("received ack for N(s)=%d-1", nr);
+	/* if (s->type == IEC_SLAVE) proto_debug("received ack for N(s)=%d-1", nr); */
 	
-	for (tmp = b = TAILQ_FIRST(&s->ackw_q); 
-		!(TAILQ_EMPTY(&s->ackw_q)) && (b = (TAILQ_NEXT(tmp, head))); 
-			b = tmp) {
+	while (!(TAILQ_EMPTY(&s->ackw_q))) {
+		b = TAILQ_FIRST(&s->ackw_q);
 		if (b->h.ic.ns == nr) break;
 		TAILQ_REMOVE(&s->ackw_q, b, head);
 		free(b);
@@ -231,7 +231,7 @@ static int iecsock_iframe_recv(struct iecsock *s, struct iec_buf *buf)
 	if (!check_nr(s, h->ic.nr))
 		return -1;
 	
-	iecsock_run_ackw_queue(s, h->ic.nr);
+/*	iecsock_run_ackw_queue(s, h->ic.nr); */
 	s->va = h->ic.nr;
 	if (s->va == s->vs) {
 		t1_timer_stop(s);
@@ -292,7 +292,7 @@ static int iecsock_uframe_recv(struct iecsock *s, struct iec_buf *buf)
 	case STARTACT:
 		if (s->type != IEC_SLAVE)
 			return -1;
-		proto_debug("STARTACT changed stopdt to 0");
+/*		proto_debug("STARTACT changed stopdt to 0"); */
 		s->stopdt = 0;
 		iecsock_uframe_send(s, STARTCON);
 		iecsock_run_write_queue(s);
@@ -305,7 +305,7 @@ static int iecsock_uframe_recv(struct iecsock *s, struct iec_buf *buf)
 		if (s->type != IEC_MASTER)
 			return -1;
 		t1_timer_stop(s);
-		proto_debug("STARTCON changed stopdt to 0");
+/*		proto_debug("STARTCON changed stopdt to 0");*/
 		s->stopdt = 0;
 		if (s->hooks.activation_indication)
 			s->hooks.activation_indication(s);
@@ -367,23 +367,23 @@ static int iecsock_frame_recv(struct iecsock *s)
 	switch (frame_type(h)) {
 	case FRAME_TYPE_I:
 		if (s->type == IEC_SLAVE && s->stopdt) {
-			proto_debug("RX I monitor direction not active");
+/*			proto_debug("RX I monitor direction not active");*/
 			free(buf);
 			break;
 		}
-		proto_debug("RX I len=%d V(r)=%d V(s)=%d V(a)=%d V(a_peer)=%d " 
+/*		proto_debug("RX I len=%d V(r)=%d V(s)=%d V(a)=%d V(a_peer)=%d " 
 		"N(r)=%d N(s)=%d", s->len, s->vr, s->vs, s->va, s->va_peer, 
-		h->ic.nr, h->ic.ns);
+		h->ic.nr, h->ic.ns);*/
 		ret = iecsock_iframe_recv(s, buf);
 	break;
 	case FRAME_TYPE_S:
-		proto_debug("RX S V(r)=%d V(s)=%d V(a)=%d V(a_peer)=%d " 
-		"N(r)=%d", s->vr, s->vs, s->va, s->va_peer, h->sc.nr);
+/*		proto_debug("RX S V(r)=%d V(s)=%d V(a)=%d V(a_peer)=%d " 
+		"N(r)=%d", s->vr, s->vs, s->va, s->va_peer, h->sc.nr);*/
 		ret = iecsock_sframe_recv(s, buf);
 		free(buf);
 	break;
 	case FRAME_TYPE_U:
-		proto_debug("RX U %s stopdt:%i", uframe_func_to_string(uframe_func(h)), s->stopdt);
+/*		proto_debug("RX U %s stopdt:%i", uframe_func_to_string(uframe_func(h)), s->stopdt);*/
 		ret = iecsock_uframe_recv(s, buf);
 		free(buf);
 	break;

@@ -32,133 +32,125 @@
 #include <sys/param.h>
 #include <arpa/inet.h>
 #include <asm/byteorder.h>
+#include <time.h>
 
 #include "iec104.h"
 
-#define IECASDU_PARSE_FUNC(name)					\
-int name(struct iec_object *obj, u_short *com_addr, int *n,		\
-	u_char *cause, u_char *test, u_char *pn, size_t ioa_len,	\
-	size_t ca_len, unsigned char *buf, size_t buflen)
+/* 
+ * iecasdu_parse_type() - Preprocessor macros for common parse procedure of ASDU
+ */
 
-#define ASDU_LEN(asdu_len, num, sq, name, ca_len, ioa_len)		\
-	if (sq)								\
-		asdu_len = ca_len + IEC_TYPEID_LEN +			\
-			(num * sizeof(struct name)) + ioa_len;		\
-	else								\
-		asdu_len = ca_len + IEC_TYPEID_LEN +			\
-			num * ((sizeof(struct name)) + ioa_len)
-
-#define ASDU_ADDR(asdu_addr, ioa_len, addrv)				\
-	asdu_addr = (ioa_len == 2 ? addrv : addrv & 0xFF);	
-	
-#define iecasdu_parse_type(objp, com_addrp, np, causep, testp, pnp, 	\
-		ioa_len, ca_len, bufp, buflen, type_name, struct_name) 	\
-	int i, asdu_len;						\
-	u_short addr_cur, *addrp;					\
-	struct iec_unit_id *unitp;					\
-	struct type_name *typep;					\
-	assert((ioa_len && ioa_len <= 2) && (ca_len && ca_len <= 2));	\
-	unitp = (struct iec_unit_id *) bufp;				\
-	ASDU_LEN(asdu_len, unitp->num, unitp->sq, 			\
-			type_name, ca_len, ioa_len);			\
-	if (asdu_len != buflen)						\
-		return (1);						\
-	addrp = (unsigned short *) ((u_char *) unitp + IEC_TYPEID_LEN);	\
-	ASDU_ADDR(*com_addrp, ca_len, *addrp);				\
-	addrp = (unsigned short *) 					\
-		((u_char *) unitp + ca_len + IEC_TYPEID_LEN);		\
-	typep = (struct type_name *)					\
-		((u_char *) unitp + ca_len + IEC_TYPEID_LEN + ioa_len);	\
-	*np = unitp->num;						\
-	*causep = unitp->cause;						\
-	*testp = unitp->t;						\
-	*pnp = unitp->pn;						\
-	if (unitp->sq) {						\
-		ASDU_ADDR(addr_cur, ioa_len, *addrp);			\
-		for (i = 0; i < unitp->num; i++, objp++, typep++, addr_cur++) { \
-			objp->ioa = addr_cur;				\
-			objp->o.struct_name = *typep;			\
-		}							\
-	} else {							\
-		for (i = 0; i < unitp->num; i++, objp++) {		\
-			ASDU_ADDR(objp->ioa, ioa_len, *addrp);		\
-			obj->o.struct_name = *typep;			\
-			addrp = (unsigned short *) 			\
-			((u_char *) typep + sizeof(struct type_name));	\
-			typep = (struct type_name *)			\
-			((u_char *) typep + sizeof(struct type_name) + ioa_len);\
-		}							\
-	}								
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type1)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type1, type1);
+#define iecasdu_parse_type(obj, buf, buflen, str_ioa, iec_type_name, struct_name)	\
+											\
+	int i;										\
+	int step = 0;									\
+	struct iec_unit_id *unitp;							\
+	struct iec_type_name *typep;							\
+	u_short *addr, addr_cur;							\
+	u_char  *addr2;									\
+											\
+	unitp = (struct iec_unit_id *) buf;						\
+											\
+	if (unitp->sq == 0) {								\
+		step = sizeof(u_short)+sizeof(u_char)+sizeof(struct iec_type_name);	\
+		if ( (step * unitp->num + sizeof(struct iec_unit_id)) > buflen )	\
+			return 1;							\
+		for (i=0; i < unitp->num; i++, obj++){					\
+			addr  = (u_short *) (buf + sizeof(struct iec_unit_id) + i*step);\
+			addr2 = (u_char *) (buf + sizeof(struct iec_unit_id) + 		\
+				sizeof(u_short) + i*step);				\
+			typep = (struct iec_type_name *) (buf + 			\
+				sizeof(struct iec_unit_id) + sizeof(u_short) +		\
+				sizeof(u_char) + i*step);				\
+			if (*str_ioa) {							\
+				obj->ioa = *addr;					\
+				obj->ioa2  = *addr2;					\
+			} else {							\
+				obj->ioa  = *addr & 0xFFF;				\
+				obj->ioa2 = 0;						\
+			}								\
+			obj->o.struct_name = *typep;					\
+		}									\
+	} else {									\
+		if ( sizeof(struct iec_type_name) * unitp->num +			\
+		     sizeof(struct iec_unit_id) > buflen )				\
+			return 1;							\
+		addr  = (u_short *) (buf + sizeof(struct iec_unit_id));			\
+		addr2 = (u_char *) (buf + sizeof(struct iec_unit_id) + sizeof(u_short));\
+		typep = (struct iec_type_name *) (buf + sizeof(struct iec_unit_id) + 	\
+				sizeof(u_short) + sizeof(u_char));			\
+		addr_cur = *addr;							\
+											\
+		for (i=0; i < unitp->num; i++, obj++, typep++, addr_cur++){		\
+			if (*str_ioa) {							\
+				obj->ioa = addr_cur;					\
+				obj->ioa2  = *addr2;					\
+			} else {							\
+				obj->ioa  = addr_cur & 0xFFF;				\
+				obj->ioa2 = 0;						\
+			}								\
+			obj->o.struct_name = *typep;					\
+		}									\
+	}										\
 	return 0;
+
+/* parse functions */
+
+int
+iecasdu_parse_type1(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type1,type1);
+}
+int
+iecasdu_parse_type13(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type13,type13);
+}
+int
+iecasdu_parse_type30(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type30,type30);
+}
+int
+iecasdu_parse_type36(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type36,type36);
+}
+int
+iecasdu_parse_type37(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type37,type37);
+}
+int
+iecasdu_parse_type100(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type100,type100);
+}
+int
+iecasdu_parse_type101(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type101,type101);
+}
+int
+iecasdu_parse_type103(struct iec_object *obj, unsigned char *buf, size_t buflen, u_char *str_ioa)
+{
+	iecasdu_parse_type(obj,buf,buflen,str_ioa,iec_type103,type103);
 }
 
-IECASDU_PARSE_FUNC(iecasdu_parse_type7)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type7, type7);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type9)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type9, type9);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type11)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type11, type11);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type13)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type13, type13);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type30)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type30, type30);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type33)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type33, type33);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type34)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type34, type34);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type35)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type33, type33);
-	return 0;
-}
-
-IECASDU_PARSE_FUNC(iecasdu_parse_type36)
-{
-	iecasdu_parse_type(obj, com_addr, n, cause, test, pn, ioa_len, 
-		ca_len, buf, buflen, iec_type36, type36);
-	return 0;
-}
+struct {
+	char type;
+	int (*funcp)();
+} iecasdu_parse_tab[] = {
+	{  1,	&iecasdu_parse_type1	},
+	{ 13,	&iecasdu_parse_type13	},
+	{ 30,	&iecasdu_parse_type30	},
+	{ 36,	&iecasdu_parse_type36	},
+	{ 37,	&iecasdu_parse_type37	},
+	{100,	&iecasdu_parse_type100	},
+	{101,	&iecasdu_parse_type101	},
+	{103,	&iecasdu_parse_type103	},
+	{  0,	NULL			}
+};
 
 /**
  * iecasdu_parse - parse ASDU unit
@@ -169,73 +161,184 @@ IECASDU_PARSE_FUNC(iecasdu_parse_type36)
  * @param cause : returned cause identifier (0-63)
  * @param test : returned test bit (1=test, 0=not test)
  * @param pn : returned P/N bit (0=positive confirm, 1=negative confirm)
- * @param ioa_len : information object address length (1-2)
- * @param ca_len : common address length (1-2)
+ * @param str_ioa : structured / not structured information object address
  * @param buf : buffer which contains unparsed ASDU
  * @param buflen : ASDU length
  * @return : 0 - success, 1 - incorrect ASDU, 2 - unknown ASDU type
  */
-int iecasdu_parse(struct iec_object *obj, u_char *type, u_short *com_addr, 
-	int *cnt, u_char *cause, u_char *test, u_char *pn, size_t ioa_len, 
-	size_t ca_len, u_char *buf, size_t buflen)
+int iecasdu_parse(struct iec_object *obj, u_char *type, u_short *com_addr,
+		int *cnt, u_char *cause, u_char *test, u_char *pn,
+		u_char *str_ioa, u_char *buf, size_t buflen)
 {
-	int ret = 0;
+	int i;
+	int ret = 2;
 	struct iec_unit_id *unitp;
 	
-	unitp = (struct iec_unit_id *) buf;
-	switch (unitp->type) {
-	case M_SP_NA_1:
-		*type = M_SP_NA_1;
-		ret = iecasdu_parse_type1(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_BO_NA_1:
-		*type = M_BO_NA_1;
-		ret = iecasdu_parse_type7(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_ME_NA_1:
-		*type = M_ME_NA_1;
-		ret = iecasdu_parse_type9(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_ME_NB_1:
-		*type = M_ME_NB_1;
-		ret = iecasdu_parse_type11(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_ME_NC_1:
-		*type = M_ME_NC_1;
-		ret = iecasdu_parse_type13(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_SP_TB_1:
-		*type = M_SP_TB_1;
-		ret = iecasdu_parse_type30(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_BO_TB_1:
-		*type = M_BO_TB_1;
-		ret = iecasdu_parse_type33(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_ME_TD_1:
-		*type = M_ME_TD_1;
-		ret = iecasdu_parse_type34(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_ME_TE_1:
-		*type = M_ME_TE_1;
-		ret = iecasdu_parse_type35(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	break;
-	case M_ME_TF_1:
-		*type = M_ME_TF_1;
-		ret = iecasdu_parse_type36(obj, com_addr, cnt, cause, test, pn, 
-			ioa_len, ca_len, buf, buflen);
-	default:
-		ret = 2;
-	break;
-	}
+	unitp	= (struct iec_unit_id *) buf;
+	*cnt	= unitp->num;
+	*cause	= unitp->cause;
+	*test	= unitp->t;
+	*pn	= unitp->pn;
+	*com_addr = unitp->ca;
+	*type   = unitp->type;
+
+	for (i=0; iecasdu_parse_tab[i].type != 0 ; i++){
+		if ( iecasdu_parse_tab[i].type == unitp->type ) {
+			ret = (*iecasdu_parse_tab[i].funcp)(obj,buf,buflen,str_ioa);
+			break;
+                }
+        } 
 	return ret;
+}
+
+void
+time_t_to_cp56time2a (cp56time2a *tm, time_t *timet)
+{
+	struct tm tml;
+
+	tml = *localtime(timet);
+	
+	tm->msec = tml.tm_sec * 1000;
+	tm->min  = tml.tm_min;
+	tm->res1 = 0;
+	tm->iv   = 0;
+	tm->hour = tml.tm_hour;
+	tm->res2 = 0;
+	tm->su   = tml.tm_isdst;
+	tm->mday = tml.tm_mday;
+	tm->wday = 0;
+	tm->month = tml.tm_mon+1;;
+	tm->res3 = 0;
+	tm->year = tml.tm_year - 100;
+	tm->res4 = 0;
+	
+}
+
+void
+current_cp56time2a (cp56time2a *tm)
+{
+	time_t timet;
+
+	timet = time(NULL);
+	time_t_to_cp56time2a(tm,&timet);
+}
+
+/*
+ * cp56time2a_to_tm() - return time as time_t structure from cp56time2a structure
+ */
+time_t
+cp56time2a_to_tm (cp56time2a *tm)
+{
+	struct tm tml;
+
+	tml.tm_sec = (int) (tm->msec / 1000);
+	tml.tm_min = tm->min;
+	tml.tm_hour = tm->hour;
+	tml.tm_isdst = tm->su;
+	tml.tm_mday = tm->mday;
+	tml.tm_mon = tm->month - 1;
+	tml.tm_year = tm->year + 100;
+	
+	return mktime(&tml);	
+}
+
+/*
+ *  iecasdu_create_header_all - create ASDU header (full version)
+ */
+
+void
+iecasdu_create_header_all (u_char *buf, size_t *buflen, u_char type, u_char num,
+			   u_char sq, u_char cause, u_char t, u_char pn, u_char ma,
+			   u_short ca)
+{
+	struct iec_unit_id unit;
+	unit.type  = type;
+	unit.num   = num;
+	unit.sq    = sq;
+	unit.cause = cause;
+	unit.t	    = t;
+	unit.pn    = pn;
+	unit.ma    = ma;
+	unit.ca    = ca;
+
+	memcpy(buf, &unit, sizeof(struct iec_unit_id));
+	*buflen += sizeof(struct iec_unit_id);
+}
+
+/*
+ *  CREATE ASDU functions
+ */
+	
+void
+iecasdu_create_type_100 (u_char *buf, size_t *buflen)
+{
+	struct iec_type100 type;
+	u_short ioa  = 1;
+	const u_char  ioa2 = 0;
+	type.qoi = 20;
+	
+	memcpy(buf, &ioa, sizeof(u_short));
+	memcpy(buf + sizeof(u_short), &ioa2, sizeof(u_char));
+	memcpy(buf + sizeof(u_short) + sizeof(u_char), &type, sizeof(struct iec_type100));
+	*buflen += sizeof(u_short) + sizeof(u_char) + sizeof(struct iec_type100);
+}
+
+void
+iecasdu_create_type_101 (u_char *buf, size_t *buflen)
+{
+	struct iec_type101 type;
+	u_short ioa  = 1;
+	const u_char  ioa2 = 0;
+	type.rqt = 5;
+	type.frz = 0;
+	
+	memcpy(buf, &ioa, sizeof(u_short));
+	memcpy(buf + sizeof(u_short), &ioa2, sizeof(u_char));
+	memcpy(buf + sizeof(u_short) + sizeof(u_char), &type, sizeof(struct iec_type101));
+	*buflen += sizeof(u_short) + sizeof(u_char) + sizeof(struct iec_type101);
+}
+
+void
+iecasdu_create_type_103 (u_char *buf, size_t *buflen)
+{
+	struct iec_type103 type;
+	u_short ioa = 1;
+	const u_char ioa2 = 0;
+	current_cp56time2a(&type.time);
+	
+	memcpy(buf, &ioa, sizeof(u_short));
+	memcpy(buf + sizeof(u_short), &ioa2, sizeof(u_char));
+	memcpy(buf + sizeof(u_short) + sizeof(u_char), &type, sizeof(struct iec_type103));
+	*buflen += sizeof(u_short) + sizeof(u_char) + sizeof(struct iec_type103);
+	
+}
+
+void
+iecasdu_create_type_36 (u_char *buf, size_t *buflen, int num, float *mv) {
+	struct iec_type36 type;
+	struct cp56time2a tm;
+	u_short ioa  = 1;
+	const u_char  ioa2 = 0;
+	int i;
+	size_t len;
+
+	current_cp56time2a(&tm);
+	len = sizeof(u_short)+sizeof(u_char)+sizeof(struct iec_type36);
+	
+	for (i=0; i < num; i++, mv++, ioa++) {
+		type.mv = *mv;
+		type.ov = 0;
+		type.res = 0;
+		type.bl=0;
+		type.sb=0;
+		type.nt=0;
+		type.iv=0;
+		type.time = tm;
+		
+		memcpy(buf + len*i, &ioa, sizeof(u_short));
+		memcpy(buf + len*i + sizeof(u_short), &ioa2, sizeof(u_char));
+		memcpy(buf + len*i + sizeof(u_short) + sizeof(u_char), &type,
+			sizeof(struct iec_type36));
+		*buflen += len;
+	}
 }
