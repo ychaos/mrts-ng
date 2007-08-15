@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 	int ret, i;
 	int n, len;
 	u_short ioa, caddr;
-	u_char cause, test, pn, *cp, t;
+	u_char cause, test, pn, *cp, t, str_ioa=0;
 	struct iec_buf *b;
 	struct iec_object obj[IEC_OBJECT_MAX];
 	
@@ -115,7 +115,7 @@ int main(int argc, char **argv)
 	
 	
 	ret = iecasdu_parse(obj, &t, &caddr, &n, &cause, &test, &pn, 
-		IOA_ADDRLEN, COM_ADDRLEN, b->data, b->data_len);
+		&str_ioa, b->data, b->data_len);
 	
 	/*
 	ret = iecasdu_parse_type7(obj, &caddr, &n, &cause, &test, 

@@ -29,6 +29,18 @@ extern "C" {
 #define IEC104_CTRL_LEN		4
 #define IEC104_ASDU_MAX		249
 
+#ifndef TAILQ_EMPTY
+#define TAILQ_EMPTY(head)       ((head)->tqh_first == NULL)
+#endif /* TAILQ_EMPTY */
+
+#ifndef TAILQ_FIRST
+#define TAILQ_FIRST(head)       ((head)->tqh_first)
+#endif /* TAILQ_FIRST */
+
+#ifndef TAILQ_NEXT
+#define TAILQ_NEXT(elm, field) ((elm)->field.tqe_next)
+#endif /* TAILQ_NEXT */
+
 enum {
 	IEC_SLAVE,
 	IEC_MASTER

@@ -1,11 +1,7 @@
-AC_INIT(configure.in)
+AC_INIT()
 
 AM_CONFIG_HEADER(config.h)
-AM_INIT_AUTOMAKE(mrts, 0.1)
-
-if test "$prefix" = "NONE"; then
-	prefix="/usr/local/mrts"
-fi
+AM_INIT_AUTOMAKE(mrts, 0.2)
 
 AC_LANG_C
 AC_PROG_CC
