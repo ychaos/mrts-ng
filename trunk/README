@@ -1,0 +1,99 @@
+Requirements:
+=============
+
+1. libevent >= 1.1
+
+Available at http://www.monkey.org/~provos/libevent. Download and install this
+library first.
+
+To build libiecsock, type
+
+$ ./configure && make
+
+or
+
+$ ./configure --prefix=/prefix/to/install && make
+
+iecsock library:
+================
+
+iecsock library is an IEC 870-5-104 link layer implementation for Linux.
+Though, it is not tested on FreeBSD/NetBSD, supposed to be easily ported to 
+these OSes. libevent is ported to M$ platforms to. Seems being possible to make 
+iecsock working on M$ Windoze (any one really needs this feature?).
+
+It means that library handles everything related with connection and session
+management, described in IEC 870-5-104 specification. User simply registers
+master or slave sessions, sets default or session specific hooks on events he
+is interested and receives ASDUs. User can initiate ASDUs transmission on events
+or by registred timer (see client and server sources). All link layer parameters
+of IEC 870-5-104 is under user control. It is possible to set timer values 
+(T0-T3) and window sizes (w and k) if default values are not desirable.
+
+iecsock library input/output is based on libevent by Niels Provos and other 
+contributors (http://www.monkey.org/~provos). Threading is evil! iecsock concept
+is based on asynchronous events, non-blocking I/O and a single thread of 
+control. Many master and slave sessions can be registered via iecsock_connect() 
+and iecsock_listen(). It is user's responsibility to provide callbacks for at 
+least on data_indication to receive data. User can also register specific 
+callbacks for particular iecsock session via iecsock_set_hooks().
+
+iecasdu library:
+================
+
+iecasdu library is a work-in-progress IEC 870-5-104 ASDU parsing and creation
+library implementation. This library is used to handle ASDUs and to retrieve
+values, associated with them easily and in standartized form. Library can handle
+variable Information Object Address and Common Address of ASDU, sequenced and
+not sequenced frames (SQ=1 and SQ=0). iecasdu library represents parsed ASDU's
+information objects as an array of iec_object structures. Each element of array
+has address and corresponding values and very easy to use later by another 
+procedures.
+
+New information objects are very easy to add. Examine source code for example.
+
+Currently parsing of this types of information objects is implemented:
+
+M_SP_NA_1 - single point information
+M_BO_NA_1 - 32 bitstring information state and change
+M_ME_NA_1 - normalized measured value
+M_ME_NB_1 - scaled measured value 
+M_ME_NC_1 - short floating point measured value 
+M_SP_TB_1 - single point information with CP56time2A time tag
+M_BO_TB_1 - 32 bitstring information state and chane with CP56time2A time tag
+M_ME_TD_1 - normalized measured value with CP56time2A time tag
+M_ME_TE_1 - scaled measured value with CP56time2A time tag
+M_ME_TF_1 - short floating point measured valye with CP56time2A time tag
+
+Note, that this is a work in progress.
+
+Testing and playing:
+====================
+
+You can run tests with client (slave side) and server (master side) programs.
+
+$ ./bin/client
+
+Starts IEC 870-5-104 slave and waits for master side connection. Slave can
+accept and handle many master-side connections simultaneousely. Debugging
+information is written to stderr.
+
+$ ./bin/server 172.20.48.124
+
+or 
+
+$ ./bin/server
+
+Starts IEC 870-5-104 master and tries to connect to slave supplied IP address
+or to localhost if no arguments supplied. If slave host is not available or
+closes connection because of error or any other reason, master stays persistent
+and tries to reconnect after 30 seconds (T0 timer). Debugging information is
+written to stderr.
+
+Both utilities begin to exchange with I-frames filled with fixed pattern data. 
+Session and frame variable fields are printed out.
+
+Acknowledgements:
+=================
+
+None at this time.
