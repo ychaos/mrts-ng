@@ -1,0 +1,1 @@
+MRTS is an abbreviation used in power industry of USSR - Main Receiveing Transmitting Station. MRTS is an attempt to create open source IEC 870-5-101/104 based components for telecontrol and supervisory systems and to become a complete solution in future. This work is a continue of borndead project "OpenMRTS" at sf.net.
